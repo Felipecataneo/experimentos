@@ -13,14 +13,14 @@ import math
 
 # Configuração da página
 st.set_page_config(
-    page_title="🔬 Quantum-Inspired Deep Learning v3.1",
+    page_title="🔬 Quantum-Inspired Deep Learning v3.2",
     page_icon="⚛️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # =============================================================================
-# COMPONENTES QUANTUM-INSPIRED v3.1
+# COMPONENTES QUANTUM-INSPIRED v3.2
 # =============================================================================
 
 class QuantumPositionalEncoding(nn.Module):
@@ -171,32 +171,18 @@ def create_enhanced_dataset_v3(max_features=12000, max_len=256):
     vectorizer = TfidfVectorizer(max_features=max_features, stop_words='english', ngram_range=(1, 2), max_df=0.7, min_df=3, sublinear_tf=True)
     X_train_tfidf, X_test_tfidf = vectorizer.fit_transform(train.data), vectorizer.transform(test.data)
     vocab_size = len(vectorizer.get_feature_names_out())
-    
-    # ================== LÓGICA DE PADDING CORRIGIDA ==================
+
     def to_sequence(X, max_len):
         sequences = []
         for i in range(X.shape[0]):
             row = X[i].toarray().flatten()
-            # Pega os índices dos tokens com score > 0 e os ordena
             all_sorted_indices = np.argsort(row)[::-1]
             valid_indices = all_sorted_indices[row[all_sorted_indices] > 0]
-            
-            # Trunca se necessário
             truncated_indices = valid_indices[:max_len]
-            
-            # Faz o padding com o ID 0
-            padded = np.pad(
-                truncated_indices,
-                (0, max_len - len(truncated_indices)),
-                'constant',
-                constant_values=-1 # Placeholder para ser 0 depois do +1
-            )
-            
-            # Soma 1 a todos os IDs. O padding (-1) se torna 0. Os tokens (0,1,2...) se tornam (1,2,3...).
+            padded = np.pad(truncated_indices, (0, max_len - len(truncated_indices)), 'constant', constant_values=-1)
             sequences.append(padded + 1)
-            
-        return torch.tensor(sequences, dtype=torch.long)
-    # =================================================================
+        numpy_array = np.array(sequences, dtype=np.int64)
+        return torch.from_numpy(numpy_array)
 
     return (to_sequence(X_train_tfidf, max_len), torch.tensor(train.target, dtype=torch.long)), \
            (to_sequence(X_test_tfidf, max_len), torch.tensor(test.target, dtype=torch.long)), \
@@ -234,8 +220,8 @@ def run_quantum_experiment_v3(config, X_train, y_train, X_test, y_test, vocab_si
                 batch_x, batch_y = X_val[i:i+config['batch_size']], y_val[i:i+config['batch_size']]
                 logits, _ = model(batch_x); val_loss += F.cross_entropy(logits, batch_y).item(); val_acc += (logits.argmax(dim=-1) == batch_y).float().mean().item(); val_batches += 1
         val_acc_avg = val_acc / val_batches if val_batches > 0 else 0
-        metrics['train_losses'].append(epoch_loss/epoch_batches); metrics['train_accs'].append(epoch_acc/epoch_batches)
-        metrics['val_losses'].append(val_loss/val_batches); metrics['val_accs'].append(val_acc_avg)
+        metrics['train_losses'].append(epoch_loss/epoch_batches if epoch_batches > 0 else 0); metrics['train_accs'].append(epoch_acc/epoch_batches if epoch_batches > 0 else 0)
+        metrics['val_losses'].append(val_loss/val_batches if val_batches > 0 else 0); metrics['val_accs'].append(val_acc_avg)
         metrics['attention_entropies'].append(epoch_entropy / epoch_batches if epoch_batches > 0 else 0)
         metrics['learning_rates'].append(optimizer.param_groups[0]['lr'])
         if val_acc_avg > best_val_acc: best_val_acc, patience_counter = val_acc_avg, 0
@@ -243,16 +229,18 @@ def run_quantum_experiment_v3(config, X_train, y_train, X_test, y_test, vocab_si
         if patience_counter >= patience: st.info(f"Early stopping na época {epoch+1}"); break
         if progress_callback: progress_callback(epoch + 1, config['epochs'])
     model.eval()
-    with torch.no_grad(): test_acc = (model(X_test)[0].argmax(dim=-1) == y_test).float().mean().item()
+    with torch.no_grad():
+        test_logits, _ = model(X_test)
+        test_acc = (test_logits.argmax(dim=-1) == y_test).float().mean().item()
     metrics['test_acc'] = test_acc
     return metrics, model
 
 def main():
-    st.title("🔬 Quantum-Inspired Deep Learning v3.1")
+    st.title("🔬 Quantum-Inspired Deep Learning v3.2")
     st.markdown("*Otimizado para alcançar >80% de acurácia mantendo inovação quântica*")
-    with st.expander("🚀 Melhorias v3.1"):
-        st.markdown("""**Principais melhorias:**\n- **Correção Crítica:** Lógica de padding de dados robusta para evitar `ValueError`.\n- **Arquitetura:** Codificação posicional, atenção com gate de coerência, FFN com múltiplos caminhos, pooling multi-escala.\n- **Dados:** TF-IDF com n-grams, sequências mais longas, mais features.\n- **Treinamento:** Label smoothing, OneCycleLR scheduler, early stopping, warmup adaptativo.""")
-    st.sidebar.header("⚙️ Configurações v3.1")
+    with st.expander("🚀 Melhorias v3.2"):
+        st.markdown("""**Principais melhorias:**\n- **Correção Crítica:** Lógica de padding de dados robusta para evitar `ValueError` e otimização de performance na criação de tensores.\n- **Arquitetura:** Codificação posicional, atenção com gate de coerência, FFN com múltiplos caminhos, pooling multi-escala.\n- **Dados:** TF-IDF com n-grams, sequências mais longas, mais features.\n- **Treinamento:** Label smoothing, OneCycleLR scheduler, early stopping, warmup adaptativo.""")
+    st.sidebar.header("⚙️ Configurações v3.2")
     st.sidebar.subheader("🧠 Arquitetura")
     dim = st.sidebar.slider("Dimensão", 128, 512, 256, 64)
     depth = st.sidebar.slider("Profundidade", 3, 8, 4)
@@ -261,21 +249,21 @@ def main():
     epochs = st.sidebar.slider("Épocas", 10, 100, 40)
     batch_size = st.sidebar.slider("Batch size", 16, 64, 32, 16)
     lr = st.sidebar.slider("Max Learning rate", 0.0001, 0.01, 0.0015, 0.0001, format="%.4f")
-    experiment_type = st.sidebar.selectbox("Experimento:", ["Comparativo v3.1", "Quantum v3.1 Only", "Classical v3.1 Only"])
-    if st.sidebar.button("🚀 Executar Experimento v3.1"):
+    experiment_type = st.sidebar.selectbox("Experimento:", ["Comparativo v3.2", "Quantum v3.2 Only", "Classical v3.2 Only"])
+    if st.sidebar.button("🚀 Executar Experimento v3.2"):
         run_enhanced_experiment_ui_v3(dim, depth, dropout, epochs, batch_size, lr, experiment_type)
 
 def run_enhanced_experiment_ui_v3(dim, depth, dropout, epochs, batch_size, lr, experiment_type):
-    st.header("🔬 Executando Experimento v3.1...")
-    with st.spinner("📊 Preparando dataset v3.1..."):
+    st.header("🔬 Executando Experimento v3.2...")
+    with st.spinner("📊 Preparando dataset v3.2..."):
         (X_train, y_train), (X_test, y_test), vocab_size, num_classes = create_enhanced_dataset_v3()
         st.success(f"✅ Dataset: {X_train.shape[0]} treino, {X_test.shape[0]} teste, {num_classes} classes, Vocab: {vocab_size}")
     configs = {}
     base_config = {'dim': dim, 'depth': depth, 'dropout': dropout, 'epochs': epochs, 'batch_size': batch_size, 'lr': lr}
-    if experiment_type in ["Comparativo v3.1", "Quantum v3.1 Only"]:
-        configs['quantum_v3'] = {**base_config, 'name': 'Quantum-Inspired v3.1', 'optimizer_type': 'quantum', 'color': '#636EFA'}
-    if experiment_type in ["Comparativo v3.1", "Classical v3.1 Only"]:
-        configs['classical_v3'] = {**base_config, 'name': 'Classical Transformer v3.1', 'optimizer_type': 'classical', 'color': '#FFA15A'}
+    if experiment_type in ["Comparativo v3.2", "Quantum v3.2 Only"]:
+        configs['quantum_v3'] = {**base_config, 'name': 'Quantum-Inspired v3.2', 'optimizer_type': 'quantum', 'color': '#636EFA'}
+    if experiment_type in ["Comparativo v3.2", "Classical v3.2 Only"]:
+        configs['classical_v3'] = {**base_config, 'name': 'Classical Transformer v3.2', 'optimizer_type': 'classical', 'color': '#FFA15A'}
     results = {}
     for name, config in configs.items():
         st.subheader(f"🔬 Treinando {config['name']}...")
@@ -289,7 +277,7 @@ def run_enhanced_experiment_ui_v3(dim, depth, dropout, epochs, batch_size, lr, e
     visualize_enhanced_results_v3(results)
 
 def visualize_enhanced_results_v3(results):
-    st.header("📊 Resultados v3.1")
+    st.header("📊 Resultados v3.2")
     cols = st.columns(len(results)); i = 0
     for name, data in results.items():
         with cols[i]: st.metric(f"🎯 {data['config']['name']} (Teste)", f"{data['test_acc']:.4f}", f"Melhor Val: {max(data['val_accs']):.4f}"); i+=1
@@ -306,7 +294,7 @@ def visualize_enhanced_results_v3(results):
     model_names = [data['config']['name'] for data in results.values()]
     colors = [data['config']['color'] for data in results.values()]
     fig.add_trace(go.Bar(x=model_names, y=final_accs, marker_color=colors, text=[f"{acc:.4f}" for acc in final_accs], textposition='auto'), row=2, col=2)
-    fig.update_layout(height=800, title_text="🔬 Análise Detalhada do Experimento v3.1", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.update_layout(height=800, title_text="🔬 Análise Detalhada do Experimento v3.2", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
