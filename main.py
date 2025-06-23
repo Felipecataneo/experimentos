@@ -166,26 +166,50 @@ class QuantumOptimizerV3:
 @st.cache_data
 def create_enhanced_dataset_v3(max_features=12000, max_len=256):
     categories = ['alt.atheism', 'soc.religion.christian', 'comp.graphics', 'sci.med', 'rec.sport.baseball', 'talk.politics.misc']
-    train = fetch_20newsgroups(subset='train', categories=categories, remove=('headers', 'footers', 'quotes'))
-    test = fetch_20newsgroups(subset='test', categories=categories, remove=('headers', 'footers', 'quotes'))
+    train_data = fetch_20newsgroups(subset='train', categories=categories, remove=('headers', 'footers', 'quotes'))
+    test_data = fetch_20newsgroups(subset='test', categories=categories, remove=('headers', 'footers', 'quotes'))
+
     vectorizer = TfidfVectorizer(max_features=max_features, stop_words='english', ngram_range=(1, 2), max_df=0.7, min_df=3, sublinear_tf=True)
-    X_train_tfidf, X_test_tfidf = vectorizer.fit_transform(train.data), vectorizer.transform(test.data)
+    
+    # .tocsr() é importante para acesso eficiente por linha
+    X_train_tfidf = vectorizer.fit_transform(train_data.data).tocsr()
+    X_test_tfidf = vectorizer.transform(test_data.data).tocsr()
     vocab_size = len(vectorizer.get_feature_names_out())
 
-    def to_sequence(X, max_len):
+    # ================== LÓGICA DE SEQUÊNCIA OTIMIZADA E CORRIGIDA ==================
+    def to_sequence_optimized(X_sparse, max_len):
         sequences = []
-        for i in range(X.shape[0]):
-            row = X[i].toarray().flatten()
-            all_sorted_indices = np.argsort(row)[::-1]
-            valid_indices = all_sorted_indices[row[all_sorted_indices] > 0]
-            truncated_indices = valid_indices[:max_len]
-            padded = np.pad(truncated_indices, (0, max_len - len(truncated_indices)), 'constant', constant_values=-1)
+        for i in range(X_sparse.shape[0]):
+            # Pega a linha i da matriz esparsa
+            row = X_sparse.getrow(i)
+            # .indices contém os IDs dos tokens não-zero
+            # .data contém os scores TF-IDF correspondentes
+            
+            # Ordena os índices com base nos seus scores
+            sorted_indices_of_data = np.argsort(row.data)[::-1]
+            
+            # Pega os IDs de vocabulário correspondentes, já ordenados
+            top_vocab_indices = row.indices[sorted_indices_of_data]
+            
+            # Trunca se necessário
+            truncated_indices = top_vocab_indices[:max_len]
+            
+            # Faz o padding com 0
+            padded = np.pad(
+                truncated_indices,
+                (0, max_len - len(truncated_indices)),
+                'constant',
+                constant_values=-1  # Placeholder
+            )
+            # Soma 1 para que o padding se torne 0 e os tokens sejam >= 1
             sequences.append(padded + 1)
+            
         numpy_array = np.array(sequences, dtype=np.int64)
         return torch.from_numpy(numpy_array)
+    # ===========================================================================
 
-    return (to_sequence(X_train_tfidf, max_len), torch.tensor(train.target, dtype=torch.long)), \
-           (to_sequence(X_test_tfidf, max_len), torch.tensor(test.target, dtype=torch.long)), \
+    return (to_sequence_optimized(X_train_tfidf, max_len), torch.tensor(train_data.target, dtype=torch.long)), \
+           (to_sequence_optimized(X_test_tfidf, max_len), torch.tensor(test_data.target, dtype=torch.long)), \
            vocab_size + 1, len(categories)
 
 def run_quantum_experiment_v3(config, X_train, y_train, X_test, y_test, vocab_size, num_classes, progress_callback=None):
